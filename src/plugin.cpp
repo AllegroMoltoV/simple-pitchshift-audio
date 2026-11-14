@@ -1,6 +1,7 @@
 #include "plugin-entry.h"
 
 #include <clap/clap.h>
+#include <clapwrapper/vst3.h>
 
 #include <algorithm>
 #include <array>
@@ -399,6 +400,10 @@ const clap_plugin *factoryCreate(const clap_plugin_factory *, const clap_host *h
 
 const clap_plugin_factory kFactory = {factoryCount, factoryDescriptor, factoryCreate};
 
+// Without this, clap-wrapper fills the VST 3 factory's e-mail contact with the placeholder "info@".
+// The other members stay nullptr, so the VST 3 class ID is the one clap-wrapper derives from the CLAP ID.
+const clap_plugin_factory_as_vst3 kVst3FactoryInfo = {nullptr, kDescriptor.url, "", nullptr, nullptr};
+
 } // namespace
 
 bool sps_entry_init(const char *)
@@ -410,5 +415,10 @@ void sps_entry_deinit(void) {}
 
 const void *sps_entry_get_factory(const char *factoryId)
 {
-	return std::strcmp(factoryId, CLAP_PLUGIN_FACTORY_ID) == 0 ? &kFactory : nullptr;
+	if (std::strcmp(factoryId, CLAP_PLUGIN_FACTORY_ID) == 0)
+		return &kFactory;
+	if (std::strcmp(factoryId, CLAP_PLUGIN_FACTORY_INFO_VST3) == 0 ||
+	    std::strcmp(factoryId, CLAP_PLUGIN_FACTORY_INFO_VST3_V1) == 0)
+		return &kVst3FactoryInfo;
+	return nullptr;
 }

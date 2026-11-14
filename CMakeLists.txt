@@ -36,6 +36,8 @@ set(PRODUCT_NAME "Simple Pitch Shift")
 
 add_library(simple-pitchshift-impl STATIC src/plugin.cpp)
 target_include_directories(simple-pitchshift-impl PUBLIC src)
+# clapwrapper/vst3.h, for the VST 3 factory information returned in src/plugin.cpp.
+target_include_directories(simple-pitchshift-impl PRIVATE "${clap-wrapper_SOURCE_DIR}/include")
 target_compile_definitions(simple-pitchshift-impl PRIVATE SIMPLE_PITCHSHIFT_VERSION="${PROJECT_VERSION}")
 target_link_libraries(simple-pitchshift-impl PUBLIC clap signalsmith-stretch)
 
