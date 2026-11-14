@@ -1,0 +1,118 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Unit tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Build the VST 3 SDK validator
+        run: |
+          cmake -S build/cpm/vst3sdk -B build-vst3sdk -G "Visual Studio 17 2022" -A x64 \
+            -DSMTG_ENABLE_VSTGUI_SUPPORT=OFF -DSMTG_ADD_VST3_PLUGINS_SAMPLES=OFF \
+            -DSMTG_ADD_VST3_HOSTING_SAMPLES=ON -DSMTG_CREATE_PLUGIN_LINK=OFF
+          cmake --build build-vst3sdk --config Release --target validator --parallel
+
+      - name: Validate VST 3 with the SDK validator
+        run: build-vst3sdk/bin/Release/validator.exe "build/assets/VST3/Simple Pitch Shift.vst3"
+
+      - name: Download pluginval and clap-validator
+        run: bash .github/scripts/fetch-validators.sh "${RUNNER_TEMP}/validators"
+
+      - name: Validate VST 3 with pluginval
+        run: |
+          "${RUNNER_TEMP}/validators/pluginval/pluginval.exe" --strictness-level 10 \
+            --validate-in-process --output-dir "${RUNNER_TEMP}/pluginval-logs" \
+            --validate "build/assets/VST3/Simple Pitch Shift.vst3"
+
+      - name: Validate CLAP with clap-validator
+        run: |
+          validator=$(find "${RUNNER_TEMP}/validators/clap-validator" -name 'clap-validator.exe' | head -n 1)
+          "${validator}" validate "build/assets/CLAP/Release/Simple Pitch Shift.clap"
+
+      - name: Package
+        id: package
+        run: |
+          version=$(sed -nE 's/^project\(simple-pitchshift-audio VERSION ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt)
+          cmake --install build --config Release --prefix dist
+          bash .github/scripts/check-package.sh dist
+          name="simple-pitchshift-${version}-windows-x64.zip"
+          (cd dist && cmake -E tar cf "../${name}" --format=zip -- *)
+          unzip -l "${name}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "name=${name}" >> "${GITHUB_OUTPUT}"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: package
+          path: ${{ steps.package.outputs.name }}
+          if-no-files-found: error
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      name: ${{ steps.package.outputs.name }}
+
+  release:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check that the tag matches the version
+        env:
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          if [ "${TAG}" != "v${VERSION}" ]; then
+            echo "Tag ${TAG} does not match version ${VERSION} in CMakeLists.txt"
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: package
+
+      - name: List release files
+        env:
+          NAME: ${{ needs.build.outputs.name }}
+        run: sha256sum "${NAME}" > "${RUNNER_TEMP}/release-checksums.txt"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: ${{ runner.temp }}/release-checksums.txt
+
+      - name: Create a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          NAME: ${{ needs.build.outputs.name }}
+        run: gh release create "${TAG}" "${NAME}" --repo "${GITHUB_REPOSITORY}" --draft --verify-tag --title "${TAG}" --notes-from-tag
