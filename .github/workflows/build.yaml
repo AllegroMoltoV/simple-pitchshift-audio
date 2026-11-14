@@ -107,4 +107,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
           NAME: ${{ needs.build.outputs.name }}
-        run: gh release create "${TAG}" "${NAME}" --repo "${GITHUB_REPOSITORY}" --draft --verify-tag --title "${TAG}" --notes-from-tag
+        # gh release create cannot combine --notes-from-tag with --repo, and this job has no checkout,
+        # so the notes are read from the annotated tag through the API.
+        run: |
+          read -r type sha < <(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq '.object.type + " " + .object.sha')
+          if [ "${type}" != tag ]; then
+            echo "${TAG} is not an annotated tag; its annotation becomes the release notes"
+            exit 1
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/git/tags/${sha}" --jq '.message' > "${RUNNER_TEMP}/release-notes.md"
+          gh release create "${TAG}" "${NAME}" --repo "${GITHUB_REPOSITORY}" --draft --verify-tag --title "${TAG}" \
+            --notes-file "${RUNNER_TEMP}/release-notes.md"
