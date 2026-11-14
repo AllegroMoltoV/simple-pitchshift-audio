@@ -52,10 +52,10 @@ gh attestation verify simple-pitchshift-<版>-windows-x64.zip --repo AllegroMolt
 
 ## ビルド
 
-Visual Studio 2022 と CMake 3.21 以降が必要です。依存するライブラリと SDK は、構成の時点でコミットを固定して取得します。
+Visual Studio 2022 以降と CMake 3.21 以降が必要です。CMake は、インストールされている中で最も新しい Visual Studio を使います。依存するライブラリと SDK は、構成の時点でコミットを固定して取得します。
 
 ```sh
-cmake -B build -G "Visual Studio 17 2022" -A x64
+cmake -B build -A x64
 cmake --build build --config Release
 ctest --test-dir build -C Release
 ```

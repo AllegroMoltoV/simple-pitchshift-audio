@@ -11,6 +11,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include <xmmintrin.h>
+
 #include "voice-pitch-shifter.h"
 
 #ifndef SIMPLE_PITCHSHIFT_VERSION
@@ -111,6 +113,25 @@ void applyGain(Plugin *p, float *const *channels, uint32_t channelCount, uint32_
 			channels[c][i] *= start + (target - start) * float(i + 1) / float(frames);
 }
 
+// Flushes denormals to zero while processing, because the pitch shifter's tails decay into them and they
+// slow the processing down. The previous mode is restored so the host's own settings are not changed.
+class FlushDenormals {
+public:
+	FlushDenormals() : saved_(_mm_getcsr())
+	{
+		_mm_setcsr(saved_ | 0x8040); // FTZ (bit 15) and DAZ (bit 6)
+	}
+	~FlushDenormals()
+	{
+		_mm_setcsr(saved_);
+	}
+	FlushDenormals(const FlushDenormals &) = delete;
+	FlushDenormals &operator=(const FlushDenormals &) = delete;
+
+private:
+	unsigned int saved_;
+};
+
 // --- clap_plugin ---
 
 bool pluginInit(const clap_plugin *plugin)
@@ -155,6 +176,7 @@ void pluginReset(const clap_plugin *plugin)
 clap_process_status pluginProcess(const clap_plugin *plugin, const clap_process *process)
 {
 	auto *p = self(plugin);
+	const FlushDenormals flush;
 	applyEvents(p, process->in_events);
 	const uint32_t frames = process->frames_count;
 	if (process->audio_inputs_count < 1 || process->audio_outputs_count < 1 || frames == 0)
@@ -340,6 +362,10 @@ bool stateLoad(const clap_plugin *plugin, const clap_istream *stream)
 		if (i < kParamCount)
 			p->values[i].store(clampParam(i, v), std::memory_order_relaxed);
 	}
+	// The loaded values replace what the host shows, so the host has to read them again.
+	const auto *hostParams = static_cast<const clap_host_params *>(p->host->get_extension(p->host, CLAP_EXT_PARAMS));
+	if (hostParams && hostParams->rescan)
+		hostParams->rescan(p->host, CLAP_PARAM_RESCAN_VALUES);
 	return true;
 }
 
