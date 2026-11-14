@@ -6,6 +6,11 @@ DAW 向けのピッチシフトのオーディオプラグインです。話し�
 
 A real-time pitch and formant shifter for DAWs, in VST® 3 and CLAP formats for Windows x64.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/VST_Compatible_Logo_Steinberg_negative.png">
+  <img src="docs/images/VST_Compatible_Logo_Steinberg.png" alt="VST Compatible" width="120">
+</picture>
+
 ## 機能
 
 - ピッチを `-12` から `+12` 半音まで変えられます。
