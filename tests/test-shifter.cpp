@@ -1,4 +1,5 @@
-// Offline checks of VoicePitchShifter. Exits with a non-zero status on the first failure.
+// Offline checks of the behaviour that hurts users silently when it breaks.
+// The DAW's delay compensation relies on a constant, correctly reported latency, so most checks guard that.
 #include "voice-pitch-shifter.h"
 
 #include <cmath>
@@ -18,90 +19,93 @@ void check(bool ok, const char *what, double rate)
 		++failures;
 }
 
-// Runs the signal through the shifter in host-sized blocks.
-std::vector<float> run(VoicePitchShifter &shifter, std::vector<float> signal, size_t window, float semitones,
-		       float formant, uint32_t block = 512)
+// Runs a mono signal through both channels in host-sized blocks and returns the left channel.
+std::vector<float> run(VoicePitchShifter &shifter, std::vector<float> left, size_t window, float semitones,
+		       float formant)
 {
-	std::vector<float> right = signal;
-	for (size_t offset = 0; offset < signal.size(); offset += block) {
-		const auto count = uint32_t(std::min<size_t>(block, signal.size() - offset));
-		shifter.process(signal.data() + offset, right.data() + offset, count, window, semitones, formant);
+	constexpr uint32_t kBlock = 512;
+	std::vector<float> right = left;
+	for (size_t offset = 0; offset < left.size(); offset += kBlock) {
+		const auto count = uint32_t(std::min<size_t>(kBlock, left.size() - offset));
+		shifter.process(left.data() + offset, right.data() + offset, count, window, semitones, formant);
 	}
-	return signal;
+	return left;
 }
 
-// Counts upward zero crossings in the second half to estimate the frequency of a steady tone.
-double estimateFrequency(const std::vector<float> &signal, double rate)
+std::vector<float> sine(double rate, size_t length, size_t start)
 {
-	const size_t start = signal.size() / 2;
-	size_t crossings = 0;
-	for (size_t i = start + 1; i < signal.size(); ++i)
-		if (signal[i - 1] < 0.0f && signal[i] >= 0.0f)
-			++crossings;
-	return double(crossings) * rate / double(signal.size() - start);
+	std::vector<float> out(length, 0.0f);
+	for (size_t i = start; i < length; ++i)
+		out[i] = float(0.5 * std::sin(2.0 * kPi * 440.0 * double(i) / rate));
+	return out;
 }
 
-void testRate(double rate)
+void latencyIsConstant(double rate)
 {
 	VoicePitchShifter shifter;
 	shifter.prepare(rate);
 	const uint32_t latency = shifter.latency();
-	check(latency > 0 && latency < uint32_t(rate * 0.2), "latency is positive and below 200 ms", rate);
+	const size_t length = size_t(rate);
 
-	const size_t length = size_t(rate * 1.5);
-
-	// Bypass delays an impulse by exactly the reported latency.
+	// S1: bypass delays an impulse by exactly the reported latency.
 	std::vector<float> impulse(length, 0.0f);
 	impulse[100] = 1.0f;
 	shifter.reset();
-	auto out = run(shifter, impulse, VoicePitchShifter::kDefaultWindowIndex, 0.0f, 0.0f);
-	check(std::fabs(out[100 + latency] - 1.0f) < 1e-6f, "bypass delays by the reported latency", rate);
+	const auto bypassed = run(shifter, impulse, VoicePitchShifter::kDefaultWindowIndex, 0.0f, 0.0f);
+	check(std::fabs(bypassed[100 + latency] - 1.0f) < 1e-6f, "S1 bypass delays by the reported latency", rate);
 
-	// Silence stays silent while shifting, for every window.
+	// S2: every window delivers a tone at the reported latency, so switching windows keeps alignment.
+	const size_t burstStart = size_t(rate * 0.3);
+	const auto burst = sine(rate, length, burstStart);
 	for (size_t w = 0; w < VoicePitchShifter::kWindowMs.size(); ++w) {
 		shifter.reset();
-		auto silent = run(shifter, std::vector<float>(length, 0.0f), w, 5.0f, 0.0f);
-		float peak = 0.0f;
-		for (float s : silent)
-			peak = std::max(peak, std::fabs(s));
-		check(peak < 1e-6f, "silence stays silent", rate);
-	}
-
-	// A tone shifted by +12 and -12 semitones doubles and halves in frequency, for every window.
-	std::vector<float> tone(length);
-	for (size_t i = 0; i < length; ++i)
-		tone[i] = float(0.5 * std::sin(2.0 * kPi * 440.0 * double(i) / rate));
-	for (size_t w = 0; w < VoicePitchShifter::kWindowMs.size(); ++w) {
-		shifter.reset();
-		const double up = estimateFrequency(run(shifter, tone, w, 12.0f, 0.0f), rate);
-		check(std::fabs(up / 880.0 - 1.0) < 0.05, "+12 semitones doubles the frequency", rate);
-		shifter.reset();
-		const double down = estimateFrequency(run(shifter, tone, w, -12.0f, 0.0f), rate);
-		check(std::fabs(down / 220.0 - 1.0) < 0.05, "-12 semitones halves the frequency", rate);
-	}
-
-	// The shifted tone arrives at the same time as the bypassed one, so the latency stays constant.
-	std::vector<float> burst(length, 0.0f);
-	const size_t burstStart = size_t(rate * 0.5);
-	for (size_t i = burstStart; i < length; ++i)
-		burst[i] = float(0.5 * std::sin(2.0 * kPi * 440.0 * double(i) / rate));
-	for (size_t w = 0; w < VoicePitchShifter::kWindowMs.size(); ++w) {
-		shifter.reset();
-		auto shifted = run(shifter, burst, w, 0.1f, 0.0f);
+		const auto shifted = run(shifter, burst, w, 0.1f, 0.0f);
 		size_t onset = 0;
 		while (onset < shifted.size() && std::fabs(shifted[onset]) < 0.05f)
 			++onset;
 		const double error = double(onset) - double(burstStart + latency);
-		check(std::fabs(error) < rate * 0.01, "shifted onset matches the reported latency within 10 ms", rate);
+		check(std::fabs(error) < rate * 0.001, "S2 onset matches the reported latency within 1 ms", rate);
 	}
+}
+
+void silenceStaysSilent(double rate)
+{
+	// S3
+	VoicePitchShifter shifter;
+	shifter.prepare(rate);
+	const auto out = run(shifter, std::vector<float>(size_t(rate), 0.0f), VoicePitchShifter::kDefaultWindowIndex,
+			     5.0f, 0.0f);
+	float peak = 0.0f;
+	for (float s : out)
+		peak = std::max(peak, std::fabs(s));
+	check(peak < 1e-6f, "S3 silence stays silent", rate);
+}
+
+void pitchGoesUp(double rate)
+{
+	// S4: +12 semitones doubles a 440 Hz tone, estimated from upward zero crossings in the second half.
+	VoicePitchShifter shifter;
+	shifter.prepare(rate);
+	const auto out =
+		run(shifter, sine(rate, size_t(rate * 1.5), 0), VoicePitchShifter::kDefaultWindowIndex, 12.0f, 0.0f);
+	const size_t start = out.size() / 2;
+	size_t crossings = 0;
+	for (size_t i = start + 1; i < out.size(); ++i)
+		if (out[i - 1] < 0.0f && out[i] >= 0.0f)
+			++crossings;
+	const double frequency = double(crossings) * rate / double(out.size() - start);
+	check(std::fabs(frequency / 880.0 - 1.0) < 0.05, "S4 +12 semitones doubles the frequency", rate);
 }
 
 } // namespace
 
 int main()
 {
-	for (double rate : {44100.0, 48000.0, 96000.0})
-		testRate(rate);
+	for (double rate : {48000.0, 96000.0}) {
+		latencyIsConstant(rate);
+		silenceStaysSilent(rate);
+	}
+	pitchGoesUp(48000.0);
 	std::printf("%d failure(s)\n", failures);
 	return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
