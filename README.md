@@ -60,11 +60,13 @@ cmake --build build --config Release
 ctest --test-dir build -C Release
 ```
 
-CI では、単体テストに加えて、VST 3 SDK の validator、[pluginval](https://github.com/Tracktion/pluginval)、[clap-validator](https://github.com/free-audio/clap-validator) で検証します。
+CI では、単体テストに加えて、[pluginval](https://github.com/Tracktion/pluginval) と [clap-validator](https://github.com/free-audio/clap-validator) で検証します。pluginval は VST 3 SDK の validator を内蔵しており、あわせて実行します。
 
 ## ライセンス
 
 MIT License です。[LICENSE](LICENSE) を参照してください。
+
+`docs/images/` の VST Compatible ロゴの画像は Steinberg Media Technologies GmbH の商標で、MIT License の対象外です。
 
 配布するファイルに含む第三者のソフトウェアと、そのライセンスは次のとおりです。いずれも配布する zip の `THIRD_PARTY_LICENSES` にライセンス文を同梱しています。
 

@@ -15,8 +15,8 @@ fetch() {
 }
 
 fetch pluginval \
-  https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Windows.zip \
-  c08e61ce3b96db41636f8ec7e76f4c7e2c13ebdac7fa1b5a1f52b4f32ec715ab
+  https://github.com/Tracktion/pluginval/releases/download/v2.0.0-beta3/pluginval_Windows.zip \
+  da158e918b60430c6a5223cd99cc2e746bda604e583258c400898caf4e95c523
 
 fetch clap-validator \
   https://github.com/free-audio/clap-validator/releases/download/0.4.1/clap-validator-0.4.1-127-g152b982-windows.zip \
