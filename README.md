@@ -6,6 +6,8 @@ DAW 向けのピッチシフトのオーディオプラグインです。話し�
 
 A real-time pitch and formant shifter for DAWs, in VST® 3 and CLAP formats for Windows x64.
 
+音のプラグイン倉庫くんの[掲載ページ](https://audio-soko-kun.allegromoltov.jp/plugins/allegromoltov/simple-pitchshift-audio)から、検査を通った版を入手できます。 / Listed on [Audio Plugin Soko-kun](https://audio-soko-kun.allegromoltov.jp/plugins/allegromoltov/simple-pitchshift-audio?lang=en), which links only to releases that passed its checks.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/VST_Compatible_Logo_Steinberg_negative.png">
   <img src="docs/images/VST_Compatible_Logo_Steinberg.png" alt="VST Compatible" width="120">
