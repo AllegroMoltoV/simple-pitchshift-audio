@@ -3,8 +3,10 @@
 set -euo pipefail
 
 root="$1"
+# The binary inside the VST 3 bundle: x86_64-win/Simple Pitch Shift.vst3 or x86_64-linux/Simple Pitch Shift.so.
+vst3_binary="$2"
 required=(
-  "VST3/Simple Pitch Shift.vst3/Contents/x86_64-win/Simple Pitch Shift.vst3"
+  "VST3/Simple Pitch Shift.vst3/Contents/${vst3_binary}"
   "CLAP/Simple Pitch Shift.clap"
   "LICENSE.txt"
   "README.txt"

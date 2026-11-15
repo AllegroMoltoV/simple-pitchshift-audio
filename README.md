@@ -1,10 +1,10 @@
 # Simple Pitch Shift
 
-DAW 向けのピッチシフトのオーディオプラグインです。話し声や歌声の高さと声質を、リアルタイムに変えられます。Windows x64 向けに、VST® 3 と CLAP の形式で配布します。
+DAW 向けのピッチシフトのオーディオプラグインです。話し声や歌声の高さと声質を、リアルタイムに変えられます。Windows x64 と Linux x86_64 向けに、VST® 3 と CLAP の形式で配布します。
 
 [OBS Studio 向けのシンプルピッチシフト](https://github.com/AllegroMoltoV/simple-pitchshift)の信号処理を DAW に移植したものです。
 
-A real-time pitch and formant shifter for DAWs, in VST® 3 and CLAP formats for Windows x64.
+A real-time pitch and formant shifter for DAWs, in VST® 3 and CLAP formats for Windows x64 and Linux x86_64.
 
 音のプラグイン倉庫くんの[掲載ページ](https://audio-soko-kun.allegromoltov.jp/plugins/allegromoltov/simple-pitchshift-audio)から、検査を通った版を入手できます。 / Listed on [Audio Plugin Soko-kun](https://audio-soko-kun.allegromoltov.jp/plugins/allegromoltov/simple-pitchshift-audio?lang=en), which links only to releases that passed its checks.
 
@@ -26,19 +26,23 @@ A real-time pitch and formant shifter for DAWs, in VST® 3 and CLAP formats for 
 ## 動作環境
 
 - Windows 10 / 11 x64
+- Linux x86_64
 - VST 3 または CLAP に対応した DAW
 
-macOS と Linux 向けには配布しません。
+macOS 向けには配布しません。macOS 向けの配布には、Apple の Developer ID の署名と公証が要るためです。
+
+Linux 向けの版は、CI の pluginval と clap-validator で検証しています。Linux の DAW での動作は確かめていません。
 
 ## インストール
 
 1. DAW を終了します。
-2. [GitHub Releases](https://github.com/AllegroMoltoV/simple-pitchshift-audio/releases) から `simple-pitchshift-<版>-windows-x64.zip` をダウンロードして展開します。
-3. `VST3\Simple Pitch Shift.vst3` フォルダーを、次のどちらかへコピーします。
+2. [GitHub Releases](https://github.com/AllegroMoltoV/simple-pitchshift-audio/releases) から、環境に合う zip をダウンロードして展開します。Windows では `simple-pitchshift-<版>-windows-x64.zip`、Linux では `simple-pitchshift-<版>-linux-x86_64.zip` です。
+3. Windows では、`VST3\Simple Pitch Shift.vst3` フォルダーを、次のどちらかへコピーします。
    - 自分だけが使う場合: `%LOCALAPPDATA%\Programs\Common\VST3\`
    - すべてのユーザーが使う場合: `C:\Program Files\Common Files\VST3\`。管理者の権限が必要です。
-4. CLAP に対応した DAW では、`CLAP\Simple Pitch Shift.clap` を `%LOCALAPPDATA%\Programs\Common\CLAP\` か `C:\Program Files\Common Files\CLAP\` へコピーします。
-5. DAW を起動し、必要ならプラグインを再スキャンします。
+4. Windows の CLAP に対応した DAW では、`CLAP\Simple Pitch Shift.clap` を `%LOCALAPPDATA%\Programs\Common\CLAP\` か `C:\Program Files\Common Files\CLAP\` へコピーします。
+5. Linux では、`VST3/Simple Pitch Shift.vst3` フォルダーを `~/.vst3/` へ、`CLAP/Simple Pitch Shift.clap` を `~/.clap/` へコピーします。
+6. DAW を起動し、必要ならプラグインを再スキャンします。
 
 インストーラーはありません。
 
@@ -47,17 +51,21 @@ macOS と Linux 向けには配布しません。
 リリースのファイルには、GitHub Actions でビルドしたことを示す証明 (artifact attestation) を付けています。[GitHub CLI](https://cli.github.com/) で確かめられます。
 
 ```sh
-gh attestation verify simple-pitchshift-<版>-windows-x64.zip --repo AllegroMoltoV/simple-pitchshift-audio
+gh attestation verify simple-pitchshift-<版>-<環境>.zip --repo AllegroMoltoV/simple-pitchshift-audio
 ```
 
 リリースは不変 (immutable release) に設定しており、公開後にファイルを差し替えられません。
 
 ## ビルド
 
-Visual Studio 2022 以降と CMake 3.21 以降が必要です。CMake は、インストールされている中で最も新しい Visual Studio を使います。依存するライブラリと SDK は、構成の時点でコミットを固定して取得します。
+CMake 3.21 以降と C++17 のコンパイラーが必要です。Windows では Visual Studio 2022 以降を使い、CMake はインストールされている中で最も新しい Visual Studio を選びます。Linux では GCC を使います。依存するライブラリと SDK は、構成の時点でコミットを固定して取得します。
 
 ```sh
+# Windows
 cmake -B build -A x64
+# Linux
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+
 cmake --build build --config Release
 ctest --test-dir build -C Release
 ```
@@ -84,6 +92,10 @@ MIT License です。[LICENSE](LICENSE) を参照してください。
 VST is a registered trademark of Steinberg Media Technologies GmbH.
 
 ## 更新履歴
+
+### 1.1.0
+
+- Linux x86_64 向けの VST 3 と CLAP を足しました。CI で pluginval と clap-validator の検証を通しています。Windows 向けの版の信号処理とファイルの配置は 1.0.1 から変わりません。
 
 ### 1.0.1
 

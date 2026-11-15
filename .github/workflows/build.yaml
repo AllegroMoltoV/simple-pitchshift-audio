@@ -12,7 +12,24 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows-x64
+            # No generator name: CMake picks the newest Visual Studio on the runner image.
+            configure: -A x64
+            vst3_binary: x86_64-win/Simple Pitch Shift.vst3
+            pluginval_exe: pluginval.exe
+            validator_exe: clap-validator.exe
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+            configure: -DCMAKE_BUILD_TYPE=Release
+            vst3_binary: x86_64-linux/Simple Pitch Shift.so
+            pluginval_exe: pluginval
+            validator_exe: clap-validator
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     defaults:
       run:
@@ -22,9 +39,10 @@ jobs:
         with:
           persist-credentials: false
 
-      # No generator name: CMake picks the newest Visual Studio on the runner image.
       - name: Configure
-        run: cmake -B build -A x64
+        env:
+          CONFIGURE: ${{ matrix.configure }}
+        run: cmake -B build ${CONFIGURE}
 
       - name: Build
         run: cmake --build build --config Release --parallel
@@ -32,41 +50,63 @@ jobs:
       - name: Unit tests
         run: ctest --test-dir build -C Release --output-on-failure
 
-      - name: Download pluginval and clap-validator
-        run: bash .github/scripts/fetch-validators.sh "${RUNNER_TEMP}/validators"
-
-      # pluginval 2 embeds the VST 3 SDK validator and runs it at strictness level 5 and above.
-      - name: Validate VST 3 with pluginval
-        run: |
-          "${RUNNER_TEMP}/validators/pluginval/pluginval.exe" validate --strictness-level 10 \
-            --output-dir "${RUNNER_TEMP}/pluginval-logs" \
-            "build/assets/VST3/Simple Pitch Shift.vst3"
-
-      - name: Validate CLAP with clap-validator
-        run: |
-          validator=$(find "${RUNNER_TEMP}/validators/clap-validator" -name 'clap-validator.exe' | head -n 1)
-          "${validator}" validate "build/assets/CLAP/Release/Simple Pitch Shift.clap"
-
+      # The validators below test the files in dist/, which are the files that go into the archive.
       - name: Package
         id: package
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          VST3_BINARY: ${{ matrix.vst3_binary }}
         run: |
           version=$(sed -nE 's/^project\(simple-pitchshift-audio VERSION ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt)
           cmake --install build --config Release --prefix dist
-          bash .github/scripts/check-package.sh dist
-          name="simple-pitchshift-${version}-windows-x64.zip"
+          bash .github/scripts/check-package.sh dist "${VST3_BINARY}"
+          name="simple-pitchshift-${version}-${PLATFORM}.zip"
           (cd dist && cmake -E tar cf "../${name}" --format=zip -- *)
           unzip -l "${name}"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "name=${name}" >> "${GITHUB_OUTPUT}"
 
+      - name: Download pluginval and clap-validator
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: bash .github/scripts/fetch-validators.sh "${RUNNER_TEMP}/validators" "${PLATFORM}"
+
+      # pluginval is a GUI application. On Linux it runs under Xvfb, which provides a virtual display.
+      - name: Install Xvfb
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth
+
+      # pluginval 2 embeds the VST 3 SDK validator and runs it at strictness level 5 and above.
+      - name: Validate VST 3 with pluginval
+        env:
+          PLUGINVAL_EXE: ${{ matrix.pluginval_exe }}
+        run: |
+          pluginval=$(find "${RUNNER_TEMP}/validators/pluginval" -name "${PLUGINVAL_EXE}" -type f | head -n 1)
+          set -- "${pluginval}" validate --strictness-level 10 --output-dir "${RUNNER_TEMP}/pluginval-logs" \
+            "dist/VST3/Simple Pitch Shift.vst3"
+          if [ "${RUNNER_OS}" = "Linux" ]; then
+            xvfb-run -a "$@"
+          else
+            "$@"
+          fi
+
+      - name: Validate CLAP with clap-validator
+        env:
+          VALIDATOR_EXE: ${{ matrix.validator_exe }}
+        run: |
+          validator=$(find "${RUNNER_TEMP}/validators/clap-validator" -name "${VALIDATOR_EXE}" -type f | head -n 1)
+          chmod +x "${validator}"
+          "${validator}" validate "dist/CLAP/Simple Pitch Shift.clap"
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: package
+          name: package-${{ matrix.platform }}
           path: ${{ steps.package.outputs.name }}
           if-no-files-found: error
     outputs:
       version: ${{ steps.package.outputs.version }}
-      name: ${{ steps.package.outputs.name }}
 
   release:
     needs: build
@@ -90,12 +130,11 @@ jobs:
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: package
+          pattern: package-*
+          merge-multiple: true
 
       - name: List release files
-        env:
-          NAME: ${{ needs.build.outputs.name }}
-        run: sha256sum "${NAME}" > "${RUNNER_TEMP}/release-checksums.txt"
+        run: sha256sum simple-pitchshift-*.zip > "${RUNNER_TEMP}/release-checksums.txt"
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -106,7 +145,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-          NAME: ${{ needs.build.outputs.name }}
         # gh release create cannot combine --notes-from-tag with --repo, and this job has no checkout,
         # so the notes are read from the annotated tag through the API.
         run: |
@@ -116,5 +154,5 @@ jobs:
             exit 1
           fi
           gh api "repos/${GITHUB_REPOSITORY}/git/tags/${sha}" --jq '.message' > "${RUNNER_TEMP}/release-notes.md"
-          gh release create "${TAG}" "${NAME}" --repo "${GITHUB_REPOSITORY}" --draft --verify-tag --title "${TAG}" \
-            --notes-file "${RUNNER_TEMP}/release-notes.md"
+          gh release create "${TAG}" simple-pitchshift-*.zip --repo "${GITHUB_REPOSITORY}" --draft --verify-tag \
+            --title "${TAG}" --notes-file "${RUNNER_TEMP}/release-notes.md"
