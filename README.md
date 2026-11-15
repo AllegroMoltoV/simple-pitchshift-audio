@@ -83,6 +83,10 @@ VST is a registered trademark of Steinberg Media Technologies GmbH.
 
 ## 更新履歴
 
+### 1.0.1
+
+- 音のプラグイン倉庫くんの宣言ファイル `.audio-soko-kun/config.json` (表示名とカテゴリ) とロゴ `.audio-soko-kun/logo.png` を足しました。信号処理は 1.0.0 から変わりません。
+
 ### 1.0.0
 
 - 最初の版です。OBS Studio 向けの版の信号処理を、VST 3 と CLAP に移植しました。
