@@ -91,6 +91,12 @@ MIT License です。[LICENSE](LICENSE) を参照してください。
 
 VST is a registered trademark of Steinberg Media Technologies GmbH.
 
+## AI 利用開示
+
+このプラグインのソースコード、ワークフロー、文書、ロゴは Anthropic Claude Code で作成しました。要件の決定、ロゴのレビュー、外部への操作の承認は作者が行いました。
+
+The source code, workflow, documentation, and logo of this plugin were written with Anthropic Claude Code. The author decided the requirements, reviewed the logo, and approved each external operation.
+
 ## 更新履歴
 
 ### 1.1.0
